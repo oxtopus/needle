@@ -8,7 +8,13 @@ import tempfile
 import time
 
 from ..dataset import dataset as data_mod
-from ..dataset.dataset import _cache_key, _save_cache_metadata, get_tokenizer, pack_sequences, prepare_tool_call_pairs
+from ..dataset.dataset import (
+    _cache_key,
+    _save_cache_metadata,
+    get_tokenizer,
+    pack_sequences,
+    prepare_tool_call_pairs,
+)
 
 
 def _write_split(split, examples, tokenizer, cache_dir, max_enc_len, max_dec_len):
@@ -16,11 +22,16 @@ def _write_split(split, examples, tokenizer, cache_dir, max_enc_len, max_dec_len
 
     ds = Dataset.from_list(examples)
     enc_vl, dec_in_vl, dec_tgt_vl, loss_vl, kept, _ = prepare_tool_call_pairs(
-        ds, tokenizer, max_enc_len=max_enc_len, max_dec_len=max_dec_len, shuffle_tools=True,
+        ds,
+        tokenizer,
+        max_enc_len=max_enc_len,
+        max_dec_len=max_dec_len,
+        shuffle_tools=True,
     )
     # Cache key weights must match prepare_tool_call_pairs (1.0)
-    cache_id = _cache_key("toolcall", len(ds), max_enc_len, max_dec_len,
-                          1.0, 1.0, 1.0, True)
+    cache_id = _cache_key(
+        "toolcall", len(ds), max_enc_len, max_dec_len, 1.0, 1.0, 1.0, True
+    )
     cache_path = os.path.join(cache_dir, cache_id)
     pack_sequences(cache_path, enc_vl, dec_in_vl, dec_tgt_vl, loss_vl)
     _save_cache_metadata(split, cache_id, len(kept), max_enc_len, max_dec_len, 256)
@@ -37,7 +48,8 @@ def _ensure_best_checkpoint(checkpoint_dir, run_id):
         return best[-1]
 
     candidates = sorted(
-        p for p in glob.glob(os.path.join(checkpoint_dir, f"{prefix}*.pkl"))
+        p
+        for p in glob.glob(os.path.join(checkpoint_dir, f"{prefix}*.pkl"))
         if not p.endswith("_best.pkl")
     )
     if not candidates:
@@ -55,28 +67,37 @@ def _call_key(c):
     """Canonical key for a tool call (name + sorted arguments). Matches train.py."""
     if not isinstance(c, dict):
         return None
-    return json.dumps({"name": c.get("name"), "arguments": c.get("arguments")}, sort_keys=True)
+    return json.dumps(
+        {"name": c.get("name"), "arguments": c.get("arguments")}, sort_keys=True
+    )
 
 
-def _quick_tool_eval(model, params, tokenizer, examples, max_gen_len=512, max_enc_len=1024):
+def _quick_tool_eval(
+    model, params, tokenizer, examples, max_gen_len=512, max_enc_len=1024
+):
     """Tool-call eval matching needle's F1 methodology (TP/FP/FN)."""
     from ..model.run import generate_batch
 
-    samples = [ex for ex in examples
-               if ex.get("answers", "").strip() not in ("", "[]")]
+    samples = [ex for ex in examples if ex.get("answers", "").strip() not in ("", "[]")]
     if not samples:
         return {}
 
     _BATCH = 32
     all_preds = []
     for i in range(0, len(samples), _BATCH):
-        chunk = samples[i:i + _BATCH]
-        all_preds.extend(generate_batch(
-            model, params, tokenizer,
-            [s["query"] for s in chunk],
-            [s["tools"] for s in chunk],
-            max_gen_len=max_gen_len, max_enc_len=max_enc_len, constrained=True,
-        ))
+        chunk = samples[i : i + _BATCH]
+        all_preds.extend(
+            generate_batch(
+                model,
+                params,
+                tokenizer,
+                [s["query"] for s in chunk],
+                [s["tools"] for s in chunk],
+                max_gen_len=max_gen_len,
+                max_enc_len=max_enc_len,
+                constrained=True,
+            )
+        )
 
     n = len(samples)
     parse_ok, exact = 0, 0
@@ -102,11 +123,19 @@ def _quick_tool_eval(model, params, tokenizer, examples, max_gen_len=512, max_en
 
         ref_keys = sorted(_call_key(c) for c in ref_calls if _call_key(c))
         pred_keys = sorted(_call_key(c) for c in pred_calls if _call_key(c))
-        if ref_keys == pred_keys and len(ref_keys) == len(ref_calls) and len(pred_keys) == len(pred_calls):
+        if (
+            ref_keys == pred_keys
+            and len(ref_keys) == len(ref_calls)
+            and len(pred_keys) == len(pred_calls)
+        ):
             exact += 1
 
-        ref_names = {c["name"] for c in ref_calls if isinstance(c, dict) and "name" in c}
-        pred_names = {c["name"] for c in pred_calls if isinstance(c, dict) and "name" in c}
+        ref_names = {
+            c["name"] for c in ref_calls if isinstance(c, dict) and "name" in c
+        }
+        pred_names = {
+            c["name"] for c in pred_calls if isinstance(c, dict) and "name" in c
+        }
         name_tp += len(pred_names & ref_names)
         name_fp += len(pred_names - ref_names)
         name_fn += len(ref_names - pred_names)
@@ -125,7 +154,10 @@ def _quick_tool_eval(model, params, tokenizer, examples, max_gen_len=512, max_en
             if isinstance(c, dict) and "name" in c and c["name"] in ref_by_name:
                 args_total += 1
                 pred_args = json.dumps(c.get("arguments", {}), sort_keys=True)
-                if any(pred_args == json.dumps(ra, sort_keys=True) for ra in ref_by_name[c["name"]]):
+                if any(
+                    pred_args == json.dumps(ra, sort_keys=True)
+                    for ra in ref_by_name[c["name"]]
+                ):
                     args_correct += 1
 
         for c in ref_calls:
@@ -198,8 +230,8 @@ def _per_tool_split(examples, val_per_tool=10, test_per_tool=10, seed=42):
             n_train = n - n_val - n_test
 
         test_idx.extend(indices[:n_test])
-        val_idx.extend(indices[n_test:n_test + n_val])
-        train_idx.extend(indices[n_test + n_val:])
+        val_idx.extend(indices[n_test : n_test + n_val])
+        train_idx.extend(indices[n_test + n_val :])
 
     train = [examples[i] for i in train_idx]
     val = [examples[i] for i in val_idx]
@@ -212,8 +244,12 @@ def _emit(tag, data):
 
 
 def _resolve_checkpoint(path):
-    """Resolve checkpoint path, always downloading from HuggingFace to ensure freshness."""
+    """Resolve checkpoint path: use local file if it exists, otherwise download from HuggingFace."""
+    if path and os.path.isfile(path):
+        return os.path.abspath(path)
+
     from huggingface_hub import hf_hub_download
+
     local_dir = "checkpoints"
     os.makedirs(local_dir, exist_ok=True)
     filename = os.path.basename(path) if path else "needle.pkl"
@@ -235,9 +271,12 @@ def finetune_local(args):
 
     print(f"Loaded {len(examples)} examples from {args.jsonl_path}")
     if len(examples) < 3:
-        raise ValueError("finetune requires at least 3 examples for train/val/test splits")
+        raise ValueError(
+            "finetune requires at least 3 examples for train/val/test splits"
+        )
 
     from ..dataset.tokenizer import DEFAULT_MAX_ENC_LEN, DEFAULT_MAX_DEC_LEN
+
     max_enc_len = getattr(args, "max_enc_len", None) or DEFAULT_MAX_ENC_LEN
     max_dec_len = getattr(args, "max_dec_len", None) or DEFAULT_MAX_DEC_LEN
 
@@ -255,18 +294,25 @@ def finetune_local(args):
         n_val = max(1, n // 5)
         n_train = n - n_val - n_test
         if n_train <= 0:
-            raise ValueError(f"Not enough data ({n} examples) for train/val/test splits")
+            raise ValueError(
+                f"Not enough data ({n} examples) for train/val/test splits"
+            )
         test_examples = all_avail[:n_test]
-        val_examples = all_avail[n_test:n_test + n_val]
-        train_examples = all_avail[n_test + n_val:]
+        val_examples = all_avail[n_test : n_test + n_val]
+        train_examples = all_avail[n_test + n_val :]
 
     if len(train_examples) == 0:
-        raise ValueError("Not enough data — need at least 3 examples per tool for train/val/test splits")
+        raise ValueError(
+            "Not enough data — need at least 3 examples per tool for train/val/test splits"
+        )
 
-    print(f"Split: {len(train_examples)} train / {len(val_examples)} val / {len(test_examples)} test (per-tool)")
+    print(
+        f"Split: {len(train_examples)} train / {len(val_examples)} val / {len(test_examples)} test (per-tool)"
+    )
 
     # Load checkpoint config
     import pickle as _pkl
+
     with open(args.checkpoint, "rb") as f:
         ckpt_config = _pkl.load(f)["config"]
 
@@ -278,33 +324,49 @@ def finetune_local(args):
     data_mod.CACHE_DIR = cache_dir
     try:
         tokenizer = get_tokenizer()
-        train_kept = _write_split("train", train_examples, tokenizer, cache_dir, max_enc_len, max_dec_len)
-        val_kept = _write_split("val", val_examples, tokenizer, cache_dir, max_enc_len, max_dec_len)
+        train_kept = _write_split(
+            "train", train_examples, tokenizer, cache_dir, max_enc_len, max_dec_len
+        )
+        val_kept = _write_split(
+            "val", val_examples, tokenizer, cache_dir, max_enc_len, max_dec_len
+        )
 
         if train_kept == 0:
-            raise ValueError(f"Tokenization produced 0 training sequences from {len(train_examples)} examples")
+            raise ValueError(
+                f"Tokenization produced 0 training sequences from {len(train_examples)} examples"
+            )
         if val_kept == 0:
-            raise ValueError(f"Tokenization produced 0 validation sequences from {len(val_examples)} examples")
+            raise ValueError(
+                f"Tokenization produced 0 validation sequences from {len(val_examples)} examples"
+            )
         print(f"Tokenized: {train_kept} train / {val_kept} val sequences")
 
         from datasets import Dataset as _Dataset
+
         val_ds = _Dataset.from_list(val_examples)
 
         # Base model eval on TEST set (never seen by model)
         from ..model.run import load_checkpoint
         from ..model.architecture import SimpleAttentionNetwork
+
         print(f"Evaluating base model on {len(test_examples)} test examples...")
         base_params, base_config = load_checkpoint(args.checkpoint)
         base_model = SimpleAttentionNetwork(base_config)
         base_metrics = _quick_tool_eval(
-            base_model, base_params, tokenizer, test_examples,
-            max_gen_len=min(max_dec_len, 512), max_enc_len=max_enc_len,
+            base_model,
+            base_params,
+            tokenizer,
+            test_examples,
+            max_gen_len=min(max_dec_len, 512),
+            max_enc_len=max_enc_len,
         )
         del base_params, base_model
         if base_metrics:
             _emit("BASE_EVAL", base_metrics)
-            print(f"  Base: call_f1={base_metrics['call_f1']:.1%}, "
-                  f"exact={base_metrics['exact_match']:.1%}")
+            print(
+                f"  Base: call_f1={base_metrics['call_f1']:.1%}, "
+                f"exact={base_metrics['exact_match']:.1%}"
+            )
 
         # Training (val_ds used for checkpoint selection inside train())
         # Architecture from checkpoint config
@@ -312,48 +374,71 @@ def finetune_local(args):
         approx_steps = max(1, (train_kept // args.batch_size) * args.epochs)
         cfg = ckpt_config
         train_args = argparse.Namespace(
-            name=experiment_name, checkpoint=args.checkpoint, init_from=None,
-            epochs=args.epochs, batch_size=args.batch_size, lr=3e-5, muon_lr=0.02,
+            name=experiment_name,
+            checkpoint=args.checkpoint,
+            init_from=None,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=3e-5,
+            muon_lr=0.02,
             d_model=cfg["d_model"],
             num_heads=cfg["num_heads"],
             num_kv_heads=cfg.get("num_kv_heads", cfg["num_heads"]),
             num_layers=cfg["num_encoder_layers"],
             num_dec_layers=cfg["num_decoder_layers"],
             d_ff=cfg.get("d_ff", cfg["d_model"] * 4),
-            max_enc_len=max_enc_len, max_dec_len=max_dec_len, max_samples=None,
-            warmup_ratio=0.05, decay_ratio=0.05, wandb=False,
+            max_enc_len=max_enc_len,
+            max_dec_len=max_dec_len,
+            max_samples=None,
+            warmup_ratio=0.05,
+            decay_ratio=0.05,
+            wandb=False,
             dtype=cfg.get("dtype", "bfloat16"),
-            checkpoint_dir=args.checkpoint_dir, seed=42,
-            eval_every=max(1, approx_steps), max_eval_samples=min(val_kept, 50),
+            checkpoint_dir=args.checkpoint_dir,
+            seed=42,
+            eval_every=max(1, approx_steps),
+            max_eval_samples=min(val_kept, 50),
             contrastive_weight=0.1,
             contrastive_dim=cfg.get("contrastive_dim", 128),
             num_memory_slots=cfg.get("num_memory_slots", 64),
-            w_name=2.0, w_value=4.0, w_key=1.5,
+            w_name=2.0,
+            w_value=4.0,
+            w_key=1.5,
             val_ds=val_ds,
         )
 
         from ..training.train import train
+
         train(train_args)
         best_path = _ensure_best_checkpoint(args.checkpoint_dir, run_id)
 
         # Finetuned model eval on TEST set (same held-out set as base eval)
         if best_path and os.path.exists(best_path) and test_examples:
-            print(f"Evaluating finetuned model on {len(test_examples)} test examples...")
+            print(
+                f"Evaluating finetuned model on {len(test_examples)} test examples..."
+            )
             ft_params, ft_config = load_checkpoint(best_path)
             ft_model = SimpleAttentionNetwork(ft_config)
             ft_metrics = _quick_tool_eval(
-                ft_model, ft_params, tokenizer, test_examples,
-                max_gen_len=min(max_dec_len, 512), max_enc_len=max_enc_len,
+                ft_model,
+                ft_params,
+                tokenizer,
+                test_examples,
+                max_gen_len=min(max_dec_len, 512),
+                max_enc_len=max_enc_len,
             )
             del ft_params, ft_model
             if ft_metrics:
                 _emit("FINETUNED_EVAL", ft_metrics)
-                print(f"  Finetuned: call_f1={ft_metrics['call_f1']:.1%}, "
-                      f"exact={ft_metrics['exact_match']:.1%}")
+                print(
+                    f"  Finetuned: call_f1={ft_metrics['call_f1']:.1%}, "
+                    f"exact={ft_metrics['exact_match']:.1%}"
+                )
     finally:
         data_mod.CACHE_DIR = original_cache_dir
         if _owns_cache:
             shutil.rmtree(cache_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()

@@ -33,8 +33,13 @@ _current_model_path = None
 _lock = threading.Lock()
 _finetune_lock = threading.Lock()
 _finetune_status = {
-    "running": False, "step": "", "log": [], "checkpoint": None,
-    "validation": None, "eval_results": None, "base_eval": None,
+    "running": False,
+    "step": "",
+    "log": [],
+    "checkpoint": None,
+    "validation": None,
+    "eval_results": None,
+    "base_eval": None,
 }
 
 
@@ -103,7 +108,6 @@ def _append_finetune_log(msg):
         if len(log) > _MAX_FINETUNE_LOG_LINES:
             del log[: len(log) - _MAX_FINETUNE_LOG_LINES]
     print(f"[finetune] {msg}", file=sys.stderr)
-
 
 
 def _read_request_body(handler, max_bytes):
@@ -230,7 +234,9 @@ def _stream_upload_to_file(handler, max_bytes, target_dir):
         raise ValueError(f"request body too large (max {max_bytes} bytes)")
 
     body = handler.rfile.read(length)
-    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode(
+        "utf-8"
+    )
     message = BytesParser(policy=_email_policy).parsebytes(header + body)
     del body  # free raw body (~512 MB)
     if not message.is_multipart():
@@ -320,25 +326,39 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path == "/finetune/status":
             if not _is_local_request(self.client_address[0]):
-                self._json_response(403, {"error": "finetune status is only available from localhost"})
+                self._json_response(
+                    403, {"error": "finetune status is only available from localhost"}
+                )
                 return
             self._json_response(200, _snapshot_finetune_status())
             return
         if path.startswith("/download/"):
             if not _is_local_request(self.client_address[0]):
-                self._json_response(403, {"error": "checkpoint download is only allowed from localhost"})
+                self._json_response(
+                    403, {"error": "checkpoint download is only allowed from localhost"}
+                )
                 return
-            name = urllib.parse.unquote(path[len("/download/"):])
+            name = urllib.parse.unquote(path[len("/download/") :])
             if "/" in name or "\\" in name or name.startswith("."):
                 self.send_error(400)
                 return
             fpath = (_checkpoints_dir() / name).resolve()
             ckpt_dir = _checkpoints_dir().resolve()
-            if fpath.is_file() and fpath.is_relative_to(ckpt_dir) and fpath.suffix in (".pkl", ".zip"):
-                ctype = "application/zip" if fpath.suffix == ".zip" else "application/octet-stream"
+            if (
+                fpath.is_file()
+                and fpath.is_relative_to(ckpt_dir)
+                and fpath.suffix in (".pkl", ".zip")
+            ):
+                ctype = (
+                    "application/zip"
+                    if fpath.suffix == ".zip"
+                    else "application/octet-stream"
+                )
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
-                self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+                self.send_header(
+                    "Content-Disposition", f'attachment; filename="{name}"'
+                )
                 self.send_header("Content-Length", str(fpath.stat().st_size))
                 self.end_headers()
                 with open(fpath, "rb") as f:
@@ -346,11 +366,14 @@ class _Handler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk)
                 return
         if path.startswith("/static/"):
-            name = path[len("/static/"):]
+            name = path[len("/static/") :]
             fpath = (_STATIC_DIR / name).resolve()
             if fpath.is_file() and fpath.is_relative_to(_STATIC_DIR.resolve()):
                 self.send_response(200)
-                self.send_header("Content-Type", _CONTENT_TYPES.get(fpath.suffix, "application/octet-stream"))
+                self.send_header(
+                    "Content-Type",
+                    _CONTENT_TYPES.get(fpath.suffix, "application/octet-stream"),
+                )
                 self.end_headers()
                 self.wfile.write(fpath.read_bytes())
                 return
@@ -385,7 +408,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle_finetune(self):
         if not _is_local_request(self.client_address[0]):
-            self._json_response(403, {"error": "finetune is only allowed from localhost"})
+            self._json_response(
+                403, {"error": "finetune is only allowed from localhost"}
+            )
             return
         try:
             body = _read_json_request(self)
@@ -403,11 +428,15 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _handle_load_model(self):
         if not _is_local_request(self.client_address[0]):
-            self._json_response(403, {"error": "model upload is only allowed from localhost"})
+            self._json_response(
+                403, {"error": "model upload is only allowed from localhost"}
+            )
             return
         upload_dir = _checkpoints_dir() / "_uploaded"
         try:
-            filename, target = _stream_upload_to_file(self, _MAX_UPLOAD_BYTES, upload_dir)
+            filename, target = _stream_upload_to_file(
+                self, _MAX_UPLOAD_BYTES, upload_dir
+            )
         except ValueError as exc:
             self._json_response(400, {"error": str(exc)})
             return
@@ -472,6 +501,7 @@ def _load_checkpoint(path, display_name=None):
 def _validate_training_data(data_file_path):
     """Validate JSONL training data and return a report dict."""
     import collections
+
     examples = []
     warnings = []
     with open(data_file_path) as f:
@@ -481,11 +511,11 @@ def _validate_training_data(data_file_path):
             try:
                 ex = _json.loads(line)
             except _json.JSONDecodeError:
-                warnings.append(f"Line {i+1}: invalid JSON")
+                warnings.append(f"Line {i + 1}: invalid JSON")
                 continue
             for key in ("query", "tools", "answers"):
                 if key not in ex:
-                    warnings.append(f"Line {i+1}: missing '{key}'")
+                    warnings.append(f"Line {i + 1}: missing '{key}'")
             examples.append(ex)
 
     tool_counts = collections.Counter()
@@ -535,7 +565,9 @@ def _start_finetune(tools_json, api_key):
 
     def _run():
         python = sys.executable
-        work_dir = Path(tempfile.mkdtemp(prefix="needle-ui-finetune-", dir=str(_project_root())))
+        work_dir = Path(
+            tempfile.mkdtemp(prefix="needle-ui-finetune-", dir=str(_project_root()))
+        )
         data_file = work_dir / "data.jsonl"
         cache_dir = work_dir / "cache"
 
@@ -544,10 +576,16 @@ def _start_finetune(tools_json, api_key):
             num_samples = _SAMPLES_PER_TOOL * num_tools
 
             _set_finetune_status(step="generating data")
-            _append_finetune_log(f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools...")
-            generated = _generate_custom_data(tools_json, api_key, num_samples, data_file)
+            _append_finetune_log(
+                f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools..."
+            )
+            generated = _generate_custom_data(
+                tools_json, api_key, num_samples, data_file
+            )
             if generated < 3:
-                raise RuntimeError("generated fewer than 3 examples; need more data for train/val/test")
+                raise RuntimeError(
+                    "generated fewer than 3 examples; need more data for train/val/test"
+                )
             _append_finetune_log(f"Generated {generated} samples.")
 
             # Data validation
@@ -585,13 +623,19 @@ def _start_finetune(tools_json, api_key):
             last_eval = None
             proc = subprocess.Popen(
                 [
-                    python, "-u",
-                    "-m", "needle.training.finetune",
+                    python,
+                    "-u",
+                    "-m",
+                    "needle.training.finetune",
                     str(data_file),
-                    "--epochs", str(_EPOCHS),
-                    "--batch-size", str(batch_size),
-                    "--checkpoint-dir", str(ckpt_dir),
-                    "--cache-dir", str(cache_dir),
+                    "--epochs",
+                    str(_EPOCHS),
+                    "--batch-size",
+                    str(batch_size),
+                    "--checkpoint-dir",
+                    str(ckpt_dir),
+                    "--cache-dir",
+                    str(cache_dir),
                     *checkpoint_arg,
                 ],
                 cwd=str(_project_root()),
@@ -604,7 +648,9 @@ def _start_finetune(tools_json, api_key):
                     line = line.rstrip("\n")
                     if line.startswith("BASE_EVAL:"):
                         try:
-                            _set_finetune_status(base_eval=_json.loads(line[10:]), step="training")
+                            _set_finetune_status(
+                                base_eval=_json.loads(line[10:]), step="training"
+                            )
                         except _json.JSONDecodeError:
                             pass
                     elif line.startswith("FINETUNED_EVAL:"):
@@ -634,7 +680,9 @@ def _start_finetune(tools_json, api_key):
             if last_eval:
                 _set_finetune_status(eval_results=last_eval)
 
-            new_files = [p for p in ckpt_dir.glob("*.pkl") if p.name not in existing_pkls]
+            new_files = [
+                p for p in ckpt_dir.glob("*.pkl") if p.name not in existing_pkls
+            ]
             if not new_files:
                 _append_finetune_log("No new checkpoint produced.")
                 _set_finetune_status(step="done")
@@ -660,7 +708,9 @@ def _start_finetune(tools_json, api_key):
             per_tool_report = {}
             if base_eval and base_eval.get("per_tool"):
                 for t, bm in base_eval["per_tool"].items():
-                    per_tool_report[t] = {"base": round(bm["correct"] / max(bm["total"], 1), 3)}
+                    per_tool_report[t] = {
+                        "base": round(bm["correct"] / max(bm["total"], 1), 3)
+                    }
             if last_eval and last_eval.get("per_tool"):
                 for t, fm in last_eval["per_tool"].items():
                     entry = per_tool_report.setdefault(t, {})
@@ -669,11 +719,40 @@ def _start_finetune(tools_json, api_key):
             eval_report = {
                 "model": ckpt_name,
                 "finetuned_checkpoint": final_name,
-                "training": {"examples": len(train_examples), "tools": num_tools, "epochs": _EPOCHS},
+                "training": {
+                    "examples": len(train_examples),
+                    "tools": num_tools,
+                    "epochs": _EPOCHS,
+                },
                 "validation": {"examples": len(val_examples)},
-                "test": {"examples": len(test_examples), "duplicates": validation.get("duplicates", 0)},
-                "base": {k: base_eval.get(k) for k in ("call_f1", "name_f1", "exact_match", "parse_rate", "args_acc")} if base_eval else None,
-                "finetuned": {k: last_eval.get(k) for k in ("call_f1", "name_f1", "exact_match", "parse_rate", "args_acc")} if last_eval else None,
+                "test": {
+                    "examples": len(test_examples),
+                    "duplicates": validation.get("duplicates", 0),
+                },
+                "base": {
+                    k: base_eval.get(k)
+                    for k in (
+                        "call_f1",
+                        "name_f1",
+                        "exact_match",
+                        "parse_rate",
+                        "args_acc",
+                    )
+                }
+                if base_eval
+                else None,
+                "finetuned": {
+                    k: last_eval.get(k)
+                    for k in (
+                        "call_f1",
+                        "name_f1",
+                        "exact_match",
+                        "parse_rate",
+                        "args_acc",
+                    )
+                }
+                if last_eval
+                else None,
                 "per_tool": per_tool_report,
             }
 
@@ -713,9 +792,18 @@ def _start_finetune(tools_json, api_key):
             with zipfile.ZipFile(str(bundle_path), "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.write(str(final_path), "checkpoint.pkl")
                 zf.writestr("tools.json", tools_json)
-                zf.writestr("train.jsonl", "\n".join(_json.dumps(ex) for ex in train_examples) + "\n")
-                zf.writestr("val.jsonl", "\n".join(_json.dumps(ex) for ex in val_examples) + "\n")
-                zf.writestr("test.jsonl", "\n".join(_json.dumps(ex) for ex in test_examples) + "\n")
+                zf.writestr(
+                    "train.jsonl",
+                    "\n".join(_json.dumps(ex) for ex in train_examples) + "\n",
+                )
+                zf.writestr(
+                    "val.jsonl",
+                    "\n".join(_json.dumps(ex) for ex in val_examples) + "\n",
+                )
+                zf.writestr(
+                    "test.jsonl",
+                    "\n".join(_json.dumps(ex) for ex in test_examples) + "\n",
+                )
                 zf.writestr("eval_report.json", _json.dumps(eval_report, indent=2))
                 zf.writestr("README.md", readme)
 
@@ -738,8 +826,12 @@ _HF_MODEL_FILE = "needle.pkl"
 
 
 def _resolve_checkpoint(checkpoint_arg):
-    """Resolve checkpoint path: always download from HuggingFace to ensure freshness."""
+    """Resolve checkpoint path: use local file if it exists, otherwise download from HuggingFace."""
     from huggingface_hub import hf_hub_download
+
+    if checkpoint_arg and os.path.isfile(checkpoint_arg):
+        return os.path.abspath(checkpoint_arg)
+
     local_dir = "checkpoints"
     os.makedirs(local_dir, exist_ok=True)
     filename = os.path.basename(checkpoint_arg) if checkpoint_arg else _HF_MODEL_FILE
